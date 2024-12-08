@@ -1,10 +1,10 @@
 name: kbeacon
-description: "A new Flutter plugin project."
-version: 0.0.1
+description: "KBeacon Plugin"
+version: 0.0.2
 homepage:
 
 environment:
-  sdk: ^3.5.2
+  sdk: ^3.3.0
   flutter: '>=3.3.0'
 
 dependencies:
