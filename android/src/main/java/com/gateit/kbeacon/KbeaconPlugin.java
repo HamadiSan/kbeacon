@@ -25,7 +25,7 @@ import io.flutter.plugin.common.MethodChannel;
 public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHandler, KBeacon.NotifyDataDelegate {
 
   private static final String TAG = "KbeaconPlugin";
-  private static final String BEACON_UUID = "your-hardcoded-uuid";
+//  private static final String BEACON_UUID = "your-hardcoded-uuid";
   private static final String BEACON_PASSWORD = "0000000000000000"; // Default password
   private boolean isConnecting = false;
   private MethodChannel channel;
@@ -46,7 +46,9 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
     if (call.method.equals("scanAndConnect")) {
       // Extract the timeout parameter
       int timeout = call.argument("timeout");
-      scanAndConnect(timeout, result);
+      String uuid = call.argument("uuid");
+      String password = call.argument("password");
+      scanAndConnect(timeout, uuid,password, result);
     } else if (call.method.equals("stopScanning")) {
       stopScanning(result);
     } else {
@@ -56,7 +58,7 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
 
 
 
-  private void scanAndConnect(int timeout, @NonNull MethodChannel.Result result) {
+  private void scanAndConnect(int timeout, String uuid, String password,@NonNull MethodChannel.Result result) {
     if (mBeaconMgr == null) {
       result.error("MANAGER_NOT_INITIALIZED", "Beacon manager not initialized", null);
       return;
@@ -93,14 +95,14 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
               Log.v(TAG, "iBeacon uuid:" + advIBeacon.getUuid());
               Log.v(TAG, "iBeacon major:" + advIBeacon.getMajorID());
               Log.v(TAG, "iBeacon minor:" + advIBeacon.getMinorID());
-              if(advIBeacon.getUuid().equals(BEACON_UUID)){
+              if(advIBeacon.getUuid().equals(uuid)){
                 // Stop scanning once the target beacon is found
                 mBeaconMgr.stopScanning();
                 if (timer != null) {
                   timer.cancel();
                 }
                 targetBeacon = beacon;
-                connectToBeacon(timeout, result);
+                connectToBeacon(timeout, password, result);
                 return;
               }
             }
@@ -125,7 +127,7 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
     mBeaconMgr.startScanning();
   }
 
-  private void connectToBeacon(int timeout, @NonNull MethodChannel.Result result) {
+  private void connectToBeacon(int timeout, String password, @NonNull MethodChannel.Result result) {
     if (targetBeacon == null) {
       result.error("BEACON_NOT_FOUND", "Target beacon not found during scanning", null);
       isConnecting = false;
@@ -139,7 +141,7 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
       connPara.readTriggerPara = true;
 
 
-      targetBeacon.connectEnhanced(BEACON_PASSWORD, timeout, connPara, new KBeacon.ConnStateDelegate() {
+      targetBeacon.connectEnhanced(password, timeout, connPara, new KBeacon.ConnStateDelegate() {
         @Override
         public void onConnStateChange(KBeacon beacon, KBConnState state, int reason) {
           if (state == KBConnState.Connected) {
