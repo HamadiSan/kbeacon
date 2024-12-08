@@ -10,7 +10,6 @@ import com.kkmcn.kbeaconlib2.KBAdvPackage.KBAdvPacketBase;
 import com.kkmcn.kbeaconlib2.KBAdvPackage.KBAdvPacketIBeacon;
 import com.kkmcn.kbeaconlib2.KBAdvPackage.KBAdvType;
 
-
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -25,9 +24,9 @@ import io.flutter.plugin.common.MethodChannel;
 public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHandler, KBeacon.NotifyDataDelegate {
 
   private static final String TAG = "KbeaconPlugin";
-//  private static final String BEACON_UUID = "your-hardcoded-uuid";
   private static final String BEACON_PASSWORD = "0000000000000000"; // Default password
   private boolean isConnecting = false;
+  private boolean resultHandled = false;
   private MethodChannel channel;
   private KBeaconsMgr mBeaconMgr;
   private KBeacon targetBeacon;
@@ -44,11 +43,10 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
   @Override
   public void onMethodCall(@NonNull MethodCall call, @NonNull MethodChannel.Result result) {
     if (call.method.equals("scanAndConnect")) {
-      // Extract the timeout parameter
       int timeout = call.argument("timeout");
       String uuid = call.argument("uuid");
       String password = call.argument("password");
-      scanAndConnect(timeout, uuid,password, result);
+      scanAndConnect(timeout, uuid, password, result);
     } else if (call.method.equals("stopScanning")) {
       stopScanning(result);
     } else {
@@ -56,47 +54,42 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
     }
   }
 
-
-
-  private void scanAndConnect(int timeout, String uuid, String password,@NonNull MethodChannel.Result result) {
+  private void scanAndConnect(int timeout, String uuid, String password, @NonNull MethodChannel.Result result) {
     if (mBeaconMgr == null) {
-      result.error("MANAGER_NOT_INITIALIZED", "Beacon manager not initialized", null);
+      completeResult(result, () -> result.error("MANAGER_NOT_INITIALIZED", "Beacon manager not initialized", null));
       return;
     }
     if (isConnecting) {
-      result.error("ALREADY_CONNECTING", "A connection is already in progress", null);
+      completeResult(result, () -> result.error("ALREADY_CONNECTING", "A connection is already in progress", null));
       return;
     }
+
     isConnecting = true;
-    // Set a timeout for the scanning operation
+    resultHandled = false;
+
     final Timer timer = new Timer();
     timer.schedule(new TimerTask() {
       @Override
       public void run() {
+        if (!resultHandled) {
+          completeResult(result, () -> result.success(false));
+        }
+        Log.e(TAG, "Timeout reached! Stopping scanning");
         mBeaconMgr.stopScanning();
         isConnecting = false;
-        result.success(false); // Return false if connection did not occur within timeout
       }
-    }, timeout);
+    }, timeout* 1000L);
 
     mBeaconMgr.delegate = new KBeaconsMgr.KBeaconMgrDelegate() {
       @Override
       public void onBeaconDiscovered(KBeacon[] beacons) {
         for (KBeacon beacon : beacons) {
-          //get beacon adv common info
-          Log.v(TAG, "beacon mac:" + beacon.getMac());
-          Log.v(TAG, "beacon name:" + beacon.getName());
-          Log.v(TAG, "beacon rssi:" + beacon.getRssi());
-
-          //get adv packet
           for (KBAdvPacketBase advPacket : beacon.allAdvPackets()) {
-            if(advPacket.getAdvType() == KBAdvType.IBeacon){
+            if (advPacket.getAdvType() == KBAdvType.IBeacon) {
               KBAdvPacketIBeacon advIBeacon = (KBAdvPacketIBeacon) advPacket;
-              Log.v(TAG, "iBeacon uuid:" + advIBeacon.getUuid());
-              Log.v(TAG, "iBeacon major:" + advIBeacon.getMajorID());
-              Log.v(TAG, "iBeacon minor:" + advIBeacon.getMinorID());
-              if(advIBeacon.getUuid().equals(uuid)){
-                // Stop scanning once the target beacon is found
+              if (advIBeacon.getUuid().equals(uuid)) {
+                // Log
+                Log.e(TAG, "Beacon with UUID " + uuid + "Found. Stopping Scanning!");
                 mBeaconMgr.stopScanning();
                 if (timer != null) {
                   timer.cancel();
@@ -112,24 +105,22 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
 
       @Override
       public void onCentralBleStateChang(int nNewState) {
-
       }
 
       @Override
       public void onScanFailed(int errorCode) {
-
-
+        if (!resultHandled) {
+          completeResult(result, () -> result.error("SCAN_FAILED", "Scan failed with error code: " + errorCode, null));
+        }
       }
     };
 
-
-    // Start scanning
     mBeaconMgr.startScanning();
   }
 
   private void connectToBeacon(int timeout, String password, @NonNull MethodChannel.Result result) {
     if (targetBeacon == null) {
-      result.error("BEACON_NOT_FOUND", "Target beacon not found during scanning", null);
+      completeResult(result, () -> result.error("BEACON_NOT_FOUND", "Target beacon not found during scanning", null));
       isConnecting = false;
       return;
     }
@@ -140,31 +131,28 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
       connPara.readCommPara = true;
       connPara.readTriggerPara = true;
 
-
       targetBeacon.connectEnhanced(password, timeout, connPara, new KBeacon.ConnStateDelegate() {
         @Override
         public void onConnStateChange(KBeacon beacon, KBConnState state, int reason) {
           if (state == KBConnState.Connected) {
-            Log.i(TAG, "Beacon connected: " + beacon.getMac());
-            result.success(true); // Return true on successful connection
+            Log.e(TAG, "Connected to iBeacon with UUID" + beacon.getMac() + " Successfully" + reason);
+            completeResult(result, () -> result.success(true));
             isConnecting = false;
             listenForEvents();
           } else if (state == KBConnState.Disconnected) {
-            Log.w(TAG, "Beacon disconnected: " + reason);
+            if (!resultHandled) {
+              completeResult(result, () -> result.success(false));
+            }
+            Log.e(TAG, "Disconnect from iBeacon with UUID" + beacon.getMac() + " due to " + reason);
             isConnecting = false;
-            result.success(false); // Return false if disconnected
           }
         }
       });
     } catch (Exception e) {
       isConnecting = false;
-      Log.e(TAG, "Failed to connect to beacon: " + e.getMessage());
-      result.error("CONNECTION_FAILED", e.getMessage(), null);
+      completeResult(result, () -> result.error("CONNECTION_FAILED", e.getMessage(), null));
     }
   }
-
-
-
 
   private void stopScanning(MethodChannel.Result result) {
     if (mBeaconMgr != null) {
@@ -182,27 +170,30 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
       return;
     }
 
-    targetBeacon.subscribeSensorDataNotify(null, KbeaconPlugin.this , (success, error) -> {
+    targetBeacon.subscribeSensorDataNotify(null, KbeaconPlugin.this, (success, error) -> {
       if (success) {
         Log.i(TAG, "Subscribed to sensor data notifications");
       } else {
         Log.e(TAG, "Failed to subscribe: " + (error != null ? error.getMessage() : "unknown error"));
       }
     });
-
   }
 
+  private void completeResult(MethodChannel.Result result, Runnable completion) {
+    if (!resultHandled) {
+      completion.run();
+      resultHandled = true;
+    }
+  }
 
   public void onNotifyDataReceived(KBeacon beacon, int eventType, byte[] sensorData) {
     Log.i(TAG, "Event received from beacon: EventType=" + eventType);
 
-    // Prepare data to forward to Flutter
     Map<String, Object> event = new HashMap<>();
     event.put("eventType", eventType);
     event.put("beaconMac", beacon.getMac());
     event.put("sensorData", sensorData != null ? new String(sensorData) : null);
 
-    // Send event to Flutter
     channel.invokeMethod("onEventReceived", event);
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kbeacon/kbeacon.dart';
 
 void main() {
   runApp(const MyApp());
@@ -12,13 +13,13 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  final String _platformVersion = 'Unknown';
-
   @override
   void initState() {
     super.initState();
+    Kbeacon.setEventListener((event) {
+      print('Event received: $event');
+    });
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -27,8 +28,11 @@ class _MyAppState extends State<MyApp> {
         appBar: AppBar(
           title: const Text('Plugin example app'),
         ),
-        body: Center(
-          child: Text('Running on: $_platformVersion\n'),
+        body: ElevatedButton(
+          onPressed: () {
+            Kbeacon.scanAndConnect(5000, "7777772E-6B6B-6D63-6E2E-636F6D000001", "00000000");
+          },
+          child: const Text('ScanAndConnect'),
         ),
       ),
     );
