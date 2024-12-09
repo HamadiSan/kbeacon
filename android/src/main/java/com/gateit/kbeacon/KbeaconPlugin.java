@@ -1,6 +1,8 @@
 package com.gateit.kbeacon;
 
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -24,13 +26,15 @@ import io.flutter.plugin.common.MethodChannel;
 public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHandler, KBeacon.NotifyDataDelegate {
 
   private static final String TAG = "KbeaconPlugin";
-  private static final String BEACON_PASSWORD = "0000000000000000"; // Default password
   private boolean isConnecting = false;
   private boolean resultHandled = false;
   private MethodChannel channel;
   private KBeaconsMgr mBeaconMgr;
   private KBeacon targetBeacon;
   private Context context;
+  private static final int INITIAL_RETRY_DELAY_MS = 1000; // 1 second
+  private static final int MAX_RETRY_DELAY_MS = 5 * 60 * 1000; // 5 minutes
+  private int currentRetryDelay = INITIAL_RETRY_DELAY_MS;
 
   @Override
   public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
@@ -65,35 +69,34 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
     }
 
     isConnecting = true;
-    resultHandled = false;
-
-    final Timer timer = new Timer();
-    timer.schedule(new TimerTask() {
-      @Override
-      public void run() {
-        if (!resultHandled) {
-          completeResult(result, () -> result.success(false));
-        }
-        Log.e(TAG, "Timeout reached! Stopping scanning");
-        mBeaconMgr.stopScanning();
-        isConnecting = false;
-      }
-    }, timeout* 1000L);
+//
+//    final Timer timer = new Timer();
+//    timer.schedule(new TimerTask() {
+//      @Override
+//      public void run() {
+//        if (!resultHandled) {
+//          completeResult(result, () -> result.success(false));
+//        }
+//        Log.e(TAG, "Timeout reached! Stopping scanning");
+//        mBeaconMgr.stopScanning();
+//        isConnecting = false;
+//      }
+//    }, timeout* 1000L);
 
     mBeaconMgr.delegate = new KBeaconsMgr.KBeaconMgrDelegate() {
       @Override
       public void onBeaconDiscovered(KBeacon[] beacons) {
+
+
         for (KBeacon beacon : beacons) {
           for (KBAdvPacketBase advPacket : beacon.allAdvPackets()) {
             if (advPacket.getAdvType() == KBAdvType.IBeacon) {
               KBAdvPacketIBeacon advIBeacon = (KBAdvPacketIBeacon) advPacket;
               if (advIBeacon.getUuid().equals(uuid)) {
+                resetRetryDelay();
                 // Log
                 Log.e(TAG, "Beacon with UUID " + uuid + "Found. Stopping Scanning!");
-                mBeaconMgr.stopScanning();
-                if (timer != null) {
-                  timer.cancel();
-                }
+//                mBeaconMgr.stopScanning();
                 targetBeacon = beacon;
                 connectToBeacon(timeout, password, result);
                 return;
@@ -105,18 +108,37 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
 
       @Override
       public void onCentralBleStateChang(int nNewState) {
+
       }
+
+
+
 
       @Override
       public void onScanFailed(int errorCode) {
-        if (!resultHandled) {
-          completeResult(result, () -> result.error("SCAN_FAILED", "Scan failed with error code: " + errorCode, null));
-        }
+        Log.e(TAG, "Scan failed with error code: " + errorCode);
+
+        // Schedule a retry with exponential backoff
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+          Log.i(TAG, "Retrying scanning after delay: " + currentRetryDelay + "ms");
+          mBeaconMgr.startScanning();
+
+          // Double the delay for the next attempt, but cap it at the maximum
+          currentRetryDelay = Math.min(currentRetryDelay * 2, MAX_RETRY_DELAY_MS);
+        }, currentRetryDelay);
       }
+
+
     };
 
     mBeaconMgr.startScanning();
   }
+
+  private void resetRetryDelay() {
+    currentRetryDelay = INITIAL_RETRY_DELAY_MS;
+  }
+
+  private Timer reconnectionTimer;
 
   private void connectToBeacon(int timeout, String password, @NonNull MethodChannel.Result result) {
     if (targetBeacon == null) {
@@ -135,22 +157,62 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
         @Override
         public void onConnStateChange(KBeacon beacon, KBConnState state, int reason) {
           if (state == KBConnState.Connected) {
-            Log.e(TAG, "Connected to iBeacon with UUID" + beacon.getMac() + " Successfully" + reason);
+            Log.e(TAG, "Connected to iBeacon with UUID " + beacon.getMac() + " successfully. Reason: " + reason);
             completeResult(result, () -> result.success(true));
             isConnecting = false;
             listenForEvents();
+            mBeaconMgr.stopScanning();
+            cancelReconnectionTimer(); // Stop any ongoing reconnection attempts
           } else if (state == KBConnState.Disconnected) {
+            Log.e(TAG, "Disconnected from iBeacon with UUID " + beacon.getMac() + " due to " + reason);
+            isConnecting = false;
             if (!resultHandled) {
               completeResult(result, () -> result.success(false));
             }
-            Log.e(TAG, "Disconnect from iBeacon with UUID" + beacon.getMac() + " due to " + reason);
-            isConnecting = false;
+            mBeaconMgr.startScanning();
+            scheduleReconnection(timeout, password); // Schedule reconnection
           }
         }
       });
     } catch (Exception e) {
       isConnecting = false;
       completeResult(result, () -> result.error("CONNECTION_FAILED", e.getMessage(), null));
+    }
+  }
+
+  private void scheduleReconnection(int timeout, String password) {
+    if (reconnectionTimer != null) {
+      return; // Avoid duplicate timers
+    }
+    reconnectionTimer = new Timer();
+    reconnectionTimer.schedule(new TimerTask() {
+      @Override
+      public void run() {
+        Log.i(TAG, "Attempting to reconnect...");
+        connectToBeacon(timeout, password, new MethodChannel.Result() {
+          @Override
+          public void success(Object result) {
+            Log.i(TAG, "Reconnection successful.");
+          }
+
+          @Override
+          public void error(String errorCode, String errorMessage, Object errorDetails) {
+            Log.e(TAG, "Reconnection failed: " + errorMessage);
+          }
+
+          @Override
+          public void notImplemented() {
+            Log.e(TAG, "Reconnection method not implemented.");
+          }
+        });
+      }
+    }, 10000, 10000); // Delay 10 seconds, repeat every 10 seconds
+  }
+
+  private void cancelReconnectionTimer() {
+    if (reconnectionTimer != null) {
+      reconnectionTimer.cancel();
+      reconnectionTimer = null;
     }
   }
 

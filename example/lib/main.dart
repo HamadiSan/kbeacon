@@ -13,12 +13,17 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
+
+  String? eventReceived;
+
   @override
   void initState() {
     super.initState();
     Kbeacon.setEventListener((event){
-      print('Event received in widget!: $event');
-    });
+setState(() {
+        eventReceived = event['eventType'].toString();
+
+});    });
     
   }
 
@@ -29,11 +34,16 @@ class _MyAppState extends State<MyApp> {
         appBar: AppBar(
           title: const Text('Plugin example app'),
         ),
-        body: ElevatedButton(
-          onPressed: () {
-            Kbeacon.scanAndConnect(5000, "7777772E-6B6B-6D63-6E2E-636F6D000001", "00000000");
-          },
-          child: const Text('ScanAndConnect'),
+        body: Column(
+          children: [
+            ElevatedButton(
+              onPressed: () {
+                Kbeacon.scanAndConnect(5000, "7777772E-6B6B-6D63-6E2E-636F6D000001", "00000000");
+              },
+              child: const Text('ScanAndConnect'),
+            ),
+            Text('Event received: $eventReceived'),
+          ],
         ),
       ),
     );
