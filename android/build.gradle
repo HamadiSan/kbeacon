@@ -39,7 +39,7 @@ android {
 
     dependencies {
         api("com.kkmcn.kbeaconlib2:kbeaconlib2:1.2.7")
-        implementation("androidx.appcompat:appcompat:1.7.0")
+        // implementation("androidx.appcompat:appcompat:1.3.0")
         testImplementation("junit:junit:4.13.2")
         testImplementation("org.mockito:mockito-core:5.0.0")
     }
