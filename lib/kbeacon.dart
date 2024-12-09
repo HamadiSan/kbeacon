@@ -11,11 +11,23 @@ class Kbeacon {
     await _channel.invokeMethod('stopScanning');
   }
 
-  static void setEventListener(Function(Map<String, dynamic>) listener) {
+    static void setEventListener(Function(Map<String, dynamic>) listener) {
+    print('Setting up event listener...'); 
     _channel.setMethodCallHandler((call) async {
+      print('Method call received: ${call.method}');
       if (call.method == 'onEventReceived') {
-        listener(call.arguments as Map<String, dynamic>);
+        print('Event received in Dart: ${call.arguments}');
+        try {
+          // Convert the Map<Object?, Object?> to Map<String, dynamic>
+          final Map<Object?, Object?> rawMap = call.arguments as Map<Object?, Object?>;
+          final Map<String, dynamic> eventMap = Map<String, dynamic>.from(rawMap);
+          
+          listener(eventMap);
+          print('Listener executed successfully');
+        } catch (e) {
+          print('Error in listener: $e');
+        }
       }
+      return null;
     });
-  }
-}
+  }}

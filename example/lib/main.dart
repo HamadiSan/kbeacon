@@ -16,9 +16,10 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
-    Kbeacon.setEventListener((event) {
-      print('Event received: $event');
+    Kbeacon.setEventListener((event){
+      print('Event received in widget!: $event');
     });
+    
   }
 
   @override
