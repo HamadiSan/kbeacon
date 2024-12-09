@@ -38,7 +38,7 @@ setState(() {
           children: [
             ElevatedButton(
               onPressed: () {
-                Kbeacon.scanAndConnect(5000, "7777772E-6B6B-6D63-6E2E-636F6D000001", "00000000");
+                Kbeacon.scanAndConnect(5000, "7777772E-6B6B-6D63-6E2E-636F6D000001", "123456789");
               },
               child: const Text('ScanAndConnect'),
             ),

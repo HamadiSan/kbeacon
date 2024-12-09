@@ -1,9 +1,13 @@
 package com.gateit.kbeacon;
 
+import static io.flutter.util.ViewUtils.getActivity;
+
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.view.KeyEvent;
+
 
 import androidx.annotation.NonNull;
 
@@ -13,7 +17,6 @@ import com.kkmcn.kbeaconlib2.KBAdvPackage.KBAdvPacketIBeacon;
 import com.kkmcn.kbeaconlib2.KBAdvPackage.KBAdvType;
 
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -53,6 +56,13 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
       scanAndConnect(timeout, uuid, password, result);
     } else if (call.method.equals("stopScanning")) {
       stopScanning(result);
+    } else if (call.method.equals("emitKeyEvent")) {
+      int keyCode = call.argument("keyCode");
+      if (emitKeyEvent(keyCode)) {
+        result.success(null);
+      } else {
+        result.error("UNAVAILABLE", "Key event emission failed.", null);
+      }
     } else {
       result.notImplemented();
     }
@@ -245,6 +255,20 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
     if (!resultHandled) {
       completion.run();
       resultHandled = true;
+    }
+  }
+
+
+  private boolean emitKeyEvent(int keyCode) {
+    try {
+      final KeyEvent keyDownEvent = new KeyEvent(KeyEvent.ACTION_DOWN, keyCode);
+      getActivity(context).getWindow().getDecorView().dispatchKeyEvent(keyDownEvent);
+      final KeyEvent keyUpEvent = new KeyEvent(KeyEvent.ACTION_UP, keyCode);
+      getActivity(context).getWindow().getDecorView().dispatchKeyEvent(keyUpEvent);
+      return true;
+    } catch (Exception e) {
+      e.printStackTrace();
+      return false;
     }
   }
 
