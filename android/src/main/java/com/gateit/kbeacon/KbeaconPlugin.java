@@ -35,6 +35,7 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
   private KBeaconsMgr mBeaconMgr;
   private KBeacon targetBeacon;
   private Context context;
+  private Activity activity;
   private static final int INITIAL_RETRY_DELAY_MS = 1000; // 1 second
   private static final int MAX_RETRY_DELAY_MS = 5 * 60 * 1000; // 5 minutes
   private int currentRetryDelay = INITIAL_RETRY_DELAY_MS;
@@ -44,6 +45,7 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
     channel = new MethodChannel(flutterPluginBinding.getBinaryMessenger(), "kbeacon");
     channel.setMethodCallHandler(this);
     this.context = flutterPluginBinding.getApplicationContext();
+    this.activity = flutterPluginBinding.getActivity();
     mBeaconMgr = KBeaconsMgr.sharedBeaconManager(context);
   }
 
@@ -262,9 +264,9 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
   private boolean emitKeyEvent(int keyCode) {
     try {
       final KeyEvent keyDownEvent = new KeyEvent(KeyEvent.ACTION_DOWN, keyCode);
-      getActivity(context).getWindow().getDecorView().dispatchKeyEvent(keyDownEvent);
+      activity.getWindow().getDecorView().dispatchKeyEvent(keyDownEvent);
       final KeyEvent keyUpEvent = new KeyEvent(KeyEvent.ACTION_UP, keyCode);
-      getActivity(context).getWindow().getDecorView().dispatchKeyEvent(keyUpEvent);
+      activity.getWindow().getDecorView().dispatchKeyEvent(keyUpEvent);
       return true;
     } catch (Exception e) {
       e.printStackTrace();
