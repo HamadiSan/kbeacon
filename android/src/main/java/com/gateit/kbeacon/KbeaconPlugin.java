@@ -7,6 +7,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.KeyEvent;
+import android.app.Activity;
 
 
 import androidx.annotation.NonNull;
@@ -22,11 +23,12 @@ import java.util.Timer;
 import java.util.TimerTask;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
+import io.flutter.embedding.engine.plugins.activity.*;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 
 /** KbeaconPlugin */
-public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHandler, KBeacon.NotifyDataDelegate {
+public class KbeaconPlugin implements FlutterPlugin, ActivityAware ,MethodChannel.MethodCallHandler, KBeacon.NotifyDataDelegate {
 
   private static final String TAG = "KbeaconPlugin";
   private boolean isConnecting = false;
@@ -35,6 +37,7 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
   private KBeaconsMgr mBeaconMgr;
   private KBeacon targetBeacon;
   private Context context;
+  private Activity activity;
   private static final int INITIAL_RETRY_DELAY_MS = 1000; // 1 second
   private static final int MAX_RETRY_DELAY_MS = 5 * 60 * 1000; // 5 minutes
   private int currentRetryDelay = INITIAL_RETRY_DELAY_MS;
@@ -46,6 +49,27 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
     this.context = flutterPluginBinding.getApplicationContext();
     mBeaconMgr = KBeaconsMgr.sharedBeaconManager(context);
   }
+
+  @Override
+  public void onAttachedToActivity(@NonNull ActivityPluginBinding binding) {
+    this.activity = binding.getActivity();
+  }
+
+  @Override
+    public void onReattachedToActivityForConfigChanges(@NonNull ActivityPluginBinding binding) {
+        this.activity = binding.getActivity();
+  }
+
+
+  @Override
+  public void onDetachedFromActivityForConfigChanges() {
+    this.activity = null;
+  }
+
+  @Override
+    public void onDetachedFromActivity() {
+        this.activity = null;
+    }
 
   @Override
   public void onMethodCall(@NonNull MethodCall call, @NonNull MethodChannel.Result result) {
@@ -163,6 +187,7 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
       connPara.readCommPara = true;
       connPara.readTriggerPara = true;
 
+
       targetBeacon.connectEnhanced(password, timeout, connPara, new KBeacon.ConnStateDelegate() {
         @Override
         public void onConnStateChange(KBeacon beacon, KBConnState state, int reason) {
@@ -172,6 +197,10 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
             isConnecting = false;
             listenForEvents();
             mBeaconMgr.stopScanning();
+            Map<String, Object> event = new HashMap<>();
+            event.put("eventType", 12);
+            event.put("message", connStateMessage(reason));
+            channel.invokeMethod("onEventReceived", event);
             cancelReconnectionTimer(); // Stop any ongoing reconnection attempts
           } else if (state == KBConnState.Disconnected) {
             Log.e(TAG, "Disconnected from iBeacon with UUID " + beacon.getMac() + " due to " + reason);
@@ -179,8 +208,19 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
             if (!resultHandled) {
               completeResult(result, () -> result.success(false));
             }
+            Map<String, Object> event = new HashMap<>();
+            event.put("eventType", 10);
+            // Convert the reason to a KBConnectionEvent enum
+            event.put("message", connStateMessage(reason));
+            channel.invokeMethod("onEventReceived", event);
             mBeaconMgr.startScanning();
             scheduleReconnection(timeout, password); // Schedule reconnection
+          } else if (state == KBConnState.Connecting) {
+            Map<String, Object> event = new HashMap<>();
+            event.put("eventType", 11);
+            // Convert the reason to a KBConnectionEvent enum
+            event.put("message", connStateMessage(reason));
+            channel.invokeMethod("onEventReceived", event);
           }
         }
       });
@@ -259,12 +299,35 @@ public class KbeaconPlugin implements FlutterPlugin, MethodChannel.MethodCallHan
   }
 
 
+
+
+  private String connStateMessage (int reason) {
+    switch (reason) {
+      case KBConnectionEvent.ConnSuccess:
+        return "Success";
+      case KBConnectionEvent.ConnTimeout:
+        return "Timeout";
+      case KBConnectionEvent.ConnAuthFail:
+        return "AuthFail";
+      case KBConnectionEvent.ConnException:
+        return "Exception";
+      case KBConnectionEvent.ConnManualDisconnecting:
+        return "ManualDisconnecting";
+      case KBConnectionEvent.ConnServiceNotSupport:
+        return "ServiceNotSupport";
+      default:
+        return "Unknown";
+    }
+  }
+
+
+
   private boolean emitKeyEvent(int keyCode) {
     try {
       final KeyEvent keyDownEvent = new KeyEvent(KeyEvent.ACTION_DOWN, keyCode);
-      getActivity(context).getWindow().getDecorView().dispatchKeyEvent(keyDownEvent);
+      activity.getWindow().getDecorView().dispatchKeyEvent(keyDownEvent);
       final KeyEvent keyUpEvent = new KeyEvent(KeyEvent.ACTION_UP, keyCode);
-      getActivity(context).getWindow().getDecorView().dispatchKeyEvent(keyUpEvent);
+      activity.getWindow().getDecorView().dispatchKeyEvent(keyUpEvent);
       return true;
     } catch (Exception e) {
       e.printStackTrace();
